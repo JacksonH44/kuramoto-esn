@@ -1,0 +1,77 @@
+%% A program that compares learning matrices for different a values
+%
+% Last Updated: August 16th, 2022
+
+% Clear variables
+clf; clearvars;
+
+% Add paths
+addpath(genpath('../kuramoto-model/kuramoto'));
+addpath(genpath('../kuramoto-model/helpers'));
+addpath('../analysis');
+addpath(genpath('../examples/closed-update'));
+
+% Load well-performing hyper parameter values
+vec = load('../scan/vectors/roberto3_vec.mat');
+epsilon = vec.good_vec(1); eta = vec.good_vec(2);
+kappa = vec.good_vec(3); beta = vec.good_vec(4);
+
+% Specify logistic map parameters
+nt = 1e4; x0 = 0.6; a = [3.5441 3.5442 3.9999 4];
+
+% Specify reservoir size and times
+sizes = [1 128 1];     % [inputSize reservoirSize outputSize]
+time = [650 1500 40];    % [washout training testing]
+
+% Generate pseudorandom input matrix
+tmpData = genAnalyticalLogMapData( nt, x0, 1 );
+U = tmpData(800 : 800 + sizes(2) - 1) - 0.5;
+
+% Make room to store learning matrices
+learningMatrices = nan(size(a, 2), sizes(2));
+
+for ii = 1 : 4
+    % Generate logistic map data
+    data = genLogMapData( nt, x0, a(ii) );
+
+    % Set up ESN
+    esn = setup_esn_gb('T0', time(1), ...
+                    'T_train', time(2), ...
+                    'T_test', time(3), ...
+                    'in_size', sizes(1), ...
+                    'res_size', sizes(2), ...
+                    'out_size', sizes(3), ...
+                    'knn', kappa, ...
+                    'coupling_strength', epsilon, ...
+                    'readin_scale', eta, ...
+                    'bias', beta, ...
+                    'W_in', U);
+
+    % Compute eigenvalues and eigenvectors
+    [V, D] = circulant_eigensystem(esn.W);
+
+    % Run ESN (train and test)
+    [esn, X, Y, gt, err] = run_esn_closed(data, data, esn, V, D);
+
+    % Store learning matrices
+    learningMatrices(ii,:) = esn.W_out;
+end
+
+% Plot learning matrices
+figure(1);
+plot(abs(learningMatrices(1,:)));
+hold on;
+plot(abs(learningMatrices(2,:)));
+hold on;
+plot(abs(learningMatrices(3,:)));
+hold on;
+plot(abs(learningMatrices(4,:)));
+hold off;
+axis tight;
+title('Learning Matrices');
+xlabel('oscillator'); ylabel('weight');
+set(gca, 'Yscale', 'log');
+legend(strcat('a = ', num2str(a(1))), ...
+        strcat('a = ', num2str(a(2))), ...
+        strcat('a = ', num2str(a(3))), ...
+        strcat('a = ', num2str(a(4))));
